@@ -1,1 +1,2 @@
-# Hive-Democracy
+# Hive Democracy
+

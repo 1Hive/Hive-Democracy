@@ -1,3 +1,4 @@
+import "./minime/MiniMeToken.sol";
 pragma solidity ^0.4.11;
 
 /**
@@ -27,23 +28,21 @@ contract DelegativeDemocracy {
     }  
     
     //returns the voting power of an account
-    function influenceOf(address _who)
+    function influenceOf(address _who, MiniMeToken _token, uint _block)
      constant returns(uint256) {
         if(delegations[_who].to == 0x0) //is endpoint of delegation?
-            return _votesDelegatedTo(_who); //calcule the votes delegated to _who
+            return _votesDelegatedTo(_who, _token, _block); //calcule the votes delegated to _who
         else return 0; //no votes: were delegated
     }   
     
     //changes the delegation of an account, if _to 0x00: self delegation (become voter)
     function delegate(address _to) {
         address _from = msg.sender;
-        if(delegationOf(_to) == _from) throw; //block impossible circular delegation
+        require(delegationOf(_to) != _from); //block impossible circular delegation
         Delegate(_from,_to);
-        
         address _oldTo = delegations[_from].to; //the delegation to be undone
         if(_oldTo != 0x0) { // _from was delegating?
             uint256 _oldToIndex = delegations[_from].toIndex; //msg.sender index in Delegator from list.
-            delete delegations[_oldTo].from[_from]; //delete our votes
             delegations[_oldTo].fromLength--; //decrement _oldTo from index size
             if(_oldToIndex < delegations[_oldTo].fromLength)
                 delegations[_oldTo].fromIndex[_oldToIndex] = delegations[_oldTo].fromIndex[delegations[_oldTo].fromLength]; //put latest index in place of msg.sender position
@@ -63,17 +62,13 @@ contract DelegativeDemocracy {
     }
     
     //returns the votes a account delegates
-    function _votesDelegatedTo(address _who)
+    function _votesDelegatedTo(address _who, MiniMeToken _token, uint _block)
      internal
      constant returns(uint256 total) {
-        total = _votesSource(_who); // source of _who votes
-        for(uint256 i = 0; delegations[_who].fromLenght > i;i++)  
-            total += _votesDelegatedTo(delegations[_who].fromIndex[i]); //sum the from delegation votes
+        total = _token.balanceOfAt(_who,_block); // source of _who votes
+        for(uint256 i = 0; delegations[_who].fromLength > i;i++)  
+            total += _votesDelegatedTo(delegations[_who].fromIndex[i], _token, _block); //sum the from delegation votes
     }
 
-    //abstract function to return the votes each account owns
-    function _votesSource(address _who)
-     internal 
-     constant returns (uint256);
 
 }

@@ -1,0 +1,6 @@
+[submodule "library/minime"]
+	path = library/minime
+	url = https://github.com/Giveth/minime/
+[submodule "library/pollmanager"]
+	path = library/pollmanager
+	url = https://github.com/Giveth/pollmanager

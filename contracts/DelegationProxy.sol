@@ -1,13 +1,15 @@
-import "./MiniMeToken.sol";
+import "./minime/MiniMeToken.sol";
+
 pragma solidity ^0.4.11;
 
 /**
- * @title DelegativeDemocracy
+ * @title DelegationProxy
  * @author Ricardo Guilherme Schmidt
  * Create a delegative democracy to MiniMeTokens; 
  */
-contract DelegativeDemocracy {
+contract DelegationProxy {
     
+    DelegationProxy public parentProxy;
     mapping (address => Delegation[]) public delegations;
     event Delegate(address who, address to);
     
@@ -26,7 +28,7 @@ contract DelegativeDemocracy {
      */
     function delegationOfAt(address _who, uint _block)
      constant returns(address) {
-        Delegation memory delegation =  getDelegationAt(delegations[_who], _block);
+        Delegation memory delegation = _getDelegationAt(_who, _block);
         if(delegation.to != 0x0) //A_who is delegating?
             return delegationOfAt(delegation.to, _block); //load the delegation of _who delegation
         else
@@ -44,7 +46,7 @@ contract DelegativeDemocracy {
     function influenceOfAt(address _who, MiniMeToken _token, uint _block)
      constant returns(uint256) {
         if(delegationOfAt(_who, _block) == 0x0) //is endpoint of delegation?
-            return _votesDelegatedTo(_who, _token, _block); //calcule the votes delegated to _who
+            return votesDelegatedTo(_who, _token, _block); //calcule the votes delegated to _who
         else return 0; //no votes: were delegated
     }   
 
@@ -53,12 +55,11 @@ contract DelegativeDemocracy {
      * @param _to to what address the caller address will delegate to?
      */
     function delegate(address _to) {
-        address _from = msg.sender;
-        require(delegationOfAt(_to, block.number) != _from); //block impossible circular delegation
-        Delegate(_from,_to);
+        require(delegationOfAt(_to, block.number) != msg.sender); //block impossible circular delegation
+        Delegate(msg.sender,_to);
         
         Delegation memory _newFrom; 
-        Delegation[] storage fromHistory = delegations[_from];
+        Delegation[] storage fromHistory = delegations[msg.sender];
         if (fromHistory.length > 0) {
             _newFrom = fromHistory[fromHistory.length - 1];
             if(_newFrom.to != 0x0){ //was delegating? remove old link
@@ -70,7 +71,7 @@ contract DelegativeDemocracy {
         _newFrom.to = _to;//register where our delegation is going
 
         if(_to != 0x0) { //_to is an account?
-            _newFrom.toIndex = _addDelegated(_from,_to);
+            _newFrom.toIndex = _addDelegated(msg.sender,_to);
         } else {
             _newFrom.toIndex = 0; //zero index
         }
@@ -80,42 +81,57 @@ contract DelegativeDemocracy {
     /**
      * @dev sum the balance of _who and his from list.
      */
-    function _votesDelegatedTo(address _who, MiniMeToken _token, uint _block)
-     internal
+    function votesDelegatedTo(address _who, MiniMeToken _token, uint _block)
      constant returns(uint256 _total) {
         _total = _token.balanceOfAt(_who, _block); // source of _who votes
-        address[] memory _from = getDelegationAt(delegations[_who],_block).from;
+        
+        address[] memory _from = _getDelegationAt(_who,_block).from;
         uint _len = _from.length;
         for(uint256 i = 0; _len > i; i++)  
-            _total += _votesDelegatedTo(_from[i], _token, _block); //sum the from delegation votes
+            _total += votesDelegatedTo(_from[i], _token, _block); //sum the from delegation votes
     }
 
-    
-    /// @dev `getDelegationAt` retrieves the delegation at a given block number
-    /// @param checkpoints The history of values being queried
-    /// @param _block The block number to retrieve the value at
-    /// @return The delegation being queried
-    function getDelegationAt(Delegation[] storage checkpoints, uint _block
-    ) constant internal returns (Delegation d) {
-        if (checkpoints.length == 0) return;
+    function _getDelegetion(){
+        Delegation[] storage checkpoints = delegations[_who];
 
-        // Shortcut for the actual value
-        if (_block >= checkpoints[checkpoints.length-1].fromBlock)
-            return checkpoints[checkpoints.length-1];
-        if (_block < checkpoints[0].fromBlock) return;
-
-        // Binary search of the value in the array
-        uint min = 0;
-        uint max = checkpoints.length-1;
-        while (max > min) {
-            uint mid = (max + min + 1)/ 2;
-            if (checkpoints[mid].fromBlock<=_block) {
-                min = mid;
+        //In case there is no registry
+        if (checkpoints.length == 0) {
+            if(address(parentProxy) != 0x0){ 
+                return _getDelegetion();
             } else {
-                max = mid-1;
+                return; 
             }
         }
-        return checkpoints[min];
+        Delegation memory d = _getMemoryAt(checkpoints, _block);
+        // Case user set delegation to parentProxy;
+        if (d.to == parentProxy){
+           return _getDelegetion(); 
+        }
+    }
+    
+    /// @dev `_getDelegationAt` retrieves the delegation at a given block number
+    /// @param _who The address being queried
+    /// @param _block The block number to retrieve the value at
+    /// @return The delegation being queried
+    function _getMemoryAt(Delegation[] storage checkpoints, uint _block
+    ) constant internal returns (Delegation d) {
+        // Case last checkpoint is the one;
+        if (_block >= checkpoints[checkpoints.length-1].fromBlock){
+            d = checkpoints[checkpoints.length-1];
+        } else {    
+            // Lookup in array;
+            uint min = 0;
+            uint max = checkpoints.length-1;
+            while (max > min) {
+                uint mid = (max + min + 1)/ 2;
+                if (checkpoints[mid].fromBlock<=_block) {
+                    min = mid;
+                } else {
+                    max = mid-1;
+                }
+            }
+            d = checkpoints[min];
+        }
     }
     
     /**
@@ -144,6 +160,6 @@ contract DelegativeDemocracy {
         _newTo.fromBlock = uint128(block.number);
         _toIndex = _newTo.from.length; //link to index
         toHistory.push(_newTo); //register `to` delegated from
-        toHistory[toHistLen].from.push(_from);
+        toHistory[toHistLen].from.push(_from); //add the delegated from in to list
     }
 }
